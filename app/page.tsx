@@ -1,69 +1,26 @@
-import Image from "next/image";
+"use client";
+
+import Link from "next/link";
+import { useFinance } from "@/components/finance-provider";
+import { Icon } from "@/components/icons";
+import { SectionLink, StatCards } from "@/components/ui";
+import { goalProgress, lessons, money, totals } from "@/lib/finance";
 
 export default function Home() {
-  return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
-  );
+  const { data } = useFinance();
+  const stats = totals(data.transactions);
+  const steps = [
+    { title: "Алғашқы транзакцияны қосыңыз", description: "Ақшаның қайда кететінін білу — алғашқы қадам.", href: "/transactions", done: data.transactions.length > 0 },
+    { title: "Арманыңызға мақсат қойыңыз", description: "Нақты мақсат жинақтауға шабыт береді.", href: "/goals", done: data.goals.length > 0 },
+    { title: "Алғашқы сабақты оқыңыз", description: "Бір пайдалы әдеттен үлкен өзгеріс басталады.", href: "/learn", done: data.completedLessons.length > 0 },
+  ];
+  const done = steps.filter((s) => s.done).length;
+  const nextLesson = lessons.find((lesson) => !data.completedLessons.includes(lesson.id)) ?? lessons[0];
+  return <div className="space-y-7">
+    <div className="home-welcome"><div><p className="eyebrow">ҚОШ КЕЛДІҢІЗ, ЖАҢА БАСТАМА!</p><h1>Болашағыңыз бүгіннен басталады<span className="heading-dot">.</span></h1><p className="page-description">Қаржыңызды түсініңіз. Саналы шешім қабылдаңыз. Мақсатыңызға жетіңіз.</p></div><span className="welcome-badge"><Icon name="leaf" size={16}/>Кішкентай қадам. Үлкен өзгеріс.</span></div>
+    <section className="hero-card"><div className="hero-copy"><span className="hero-tag"><span/>ҚАРЖЫЛЫҚ САУАТТЫЛЫҚ — ӨМІРЛІК ДАҒДЫ</span><h2>Ақшаңызды басқарыңыз.<br/><span>Арманыңызға жақындаңыз.</span></h2><p>Кіріс пен шығысты бақылаудан алғашқы жинаққа дейін — қаржылық еркіндікке апарар жолды бірге бастайық.</p><div className="hero-actions"><Link href="/dashboard" className="button button-lime">Қаржымды басқару <Icon name="arrow" size={18}/></Link><Link href="/learn" className="hero-secondary"><Icon name="book" size={18}/>Білім алуды бастау</Link></div><div className="hero-footnote"><Icon name="shield" size={15}/>Қарапайым. Қазақша. Өзіңіз үшін.</div></div><div className="hero-art" aria-hidden="true"><div className="orbit orbit-one"/><div className="orbit orbit-two"/><div className="art-dot art-dot-one"/><div className="art-dot art-dot-two"/><div className="growth-card"><span className="growth-label"><span className="growth-icon"><Icon name="chart" size={20}/></span>Сіздің мүмкіндігіңіз</span><strong>Жақсы әдеттер.<br/>Сенімді болашақ.</strong><svg viewBox="0 0 245 110" className="growth-chart"><defs><linearGradient id="growth-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#8dbb6d" stopOpacity=".35"/><stop offset="1" stopColor="#8dbb6d" stopOpacity="0"/></linearGradient></defs><path d="M5 92C28 92 29 72 53 75S86 91 105 62 132 79 154 47 178 57 197 28 217 40 240 9V110H5Z" fill="url(#growth-fill)"/><path d="M5 92C28 92 29 72 53 75S86 91 105 62 132 79 154 47 178 57 197 28 217 40 240 9" fill="none" stroke="#6b9f50" strokeWidth="3" strokeLinecap="round"/><circle cx="240" cy="9" r="5" fill="#254d3d"/></svg><div className="growth-caption">БІЛІМ <span>ӘДЕТ</span> НӘТИЖЕ</div></div><div className="floating-check"><span><Icon name="check" size={18}/></span><div><strong>Бүгінгі қадам</strong><small>Ертеңгі еркіндікке</small></div></div><span className="art-spark">✳</span></div></section>
+    <div><div className="section-heading"><h2>Қаржыңызға бір көзқарас</h2><SectionLink href="/dashboard">Толық шолу</SectionLink></div><StatCards {...stats}/></div>
+    <div className="home-bottom-grid"><section className="panel first-steps"><div className="section-heading"><div><span className="eyebrow">БАСТАУ ОҢАЙ</span><h2>Сіздің алғашқы қадамдарыңыз</h2></div><span className="count-badge">{done} / 3</span></div><div className="progress-track"><span style={{ width: `${done / 3 * 100}%` }}/></div><div className="step-list">{steps.map((step, i) => <Link href={step.href} key={step.href} className={`step-item ${step.done ? "complete" : ""}`}><span className="step-number">{step.done ? <Icon name="check" size={17}/> : String(i + 1).padStart(2, "0")}</span><div><h3>{step.title}</h3><p>{step.description}</p></div><Icon name="chevron" size={17}/></Link>)}</div></section><section className="featured-lesson"><div className="flex items-center justify-between"><span className="lesson-tag"><Icon name="book" size={14}/>БҮГІН ҮЙРЕНІҢІЗ</span><span className="featured-flower" aria-hidden="true">✳</span></div><h2>{nextLesson.title}</h2><p>{nextLesson.description}</p><div className="featured-bottom"><span><Icon name="clock" size={15}/>{nextLesson.duration} · Қысқаша сабақ</span><Link href={`/learn#${nextLesson.id}`} className="round-link" aria-label={`${nextLesson.title} сабағын оқу`}><Icon name="arrow" size={20}/></Link></div></section></div>
+    <section className="home-goals panel"><div className="section-heading"><div className="flex items-center gap-3"><span className="soft-icon mint"><Icon name="target"/></span><div><h2>Әр арманның өз жоспары бар</h2><p className="text-muted text-sm mt-1">{data.goals.length ? "Мақсатыңызға бір қадам жақындаңыз." : "Саяхат, жаңа ноутбук немесе қауіпсіздік қоры — алғашқы мақсатыңызды құрыңыз."}</p></div></div><SectionLink href="/goals">{data.goals.length ? "Мақсаттарды көру" : "Мақсат құру"}</SectionLink></div>{data.goals.length > 0 && <div className="mini-goals">{data.goals.slice(0, 3).map((goal) => <Link href="/goals" key={goal.id}><div className="flex justify-between gap-3"><strong>{goal.title}</strong><span>{goalProgress(goal)}%</span></div><div className="progress-track"><span style={{ width: `${goalProgress(goal)}%` }}/></div><p>{money(goal.saved)} <span>/ {money(goal.target)}</span></p></Link>)}</div>}</section>
+  </div>;
 }

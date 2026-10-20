@@ -1,36 +1,82 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Қаржылық сауаттылық · qarjy.
 
-## Getting Started
+Қазақ тілінде жеке қаржыны бақылауға және қаржылық әдет қалыптастыруға арналған веб-қосымша. Қолданыстағы Next.js жобасының негізінде жасалған.
 
-First, run the development server:
+## Технологиялар
 
-```bash
+- Next.js **16.4.2**, App Router
+- React **19.3.0**, TypeScript **5**
+- Tailwind CSS **4**, қолданыстағы `@tailwindcss/turbopack` интеграциясы
+- `localStorage`: транзакциялар, жинақ мақсаттары, сақталған бюджет, сабақ прогресі және түс режимі
+- Қосымша UI кітапханалары мен сыртқы қаржы API-лері қажет емес
+
+## Іске қосу
+
+Node.js 20.9 немесе одан жаңа нұсқасы қажет. Тексеру сценарийіне Node.js 22.18+ немесе 24+ ұсынылады.
+
+```powershell
+cd C:\Users\Acer\My-project\financial-literacy
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Тәуелділіктер орнатылған болса, `npm install` қадамын өткізіңіз. Браузерде [http://localhost:3000](http://localhost:3000) ашыңыз. Порт бос болмаса: `npm run dev -- --port 3001`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Өндірістік нұсқаны құру және іске қосу:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```powershell
+npm run build
+npm run start
+```
 
-## Learn More
+## Бөлімдер
 
-To learn more about Next.js, take a look at the following resources:
+| Мекенжай | Мүмкіндіктер |
+| --- | --- |
+| `/` | Қаржылық сауаттылық туралы ақпарат, жалпы көрсеткіштер, алғашқы қадамдар |
+| `/dashboard` | Жалпы баланс, кіріс, шығыс, соңғы алты ай диаграммасы, шығыс санаттары және мақсаттар |
+| `/transactions` | Кіріс/шығыс қосу, растау арқылы жою, іздеу, ай мен түрі бойынша сүзу, сүзілген деректерді CSV файлына жүктеу |
+| `/calculator` | Айлық кіріс пен шығыстар, еркін қалдық, жоспарды сақтау, осы айдың транзакцияларын алу, 50/30/20 мысалы |
+| `/goals` | Мақсат құру, бастапқы жинақ, мерзім, толықтыру, прогресс, растау арқылы жою |
+| `/learn` | Алты қысқаша сабақ, шағын тест, аяқталу прогресін сақтау |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Жарық/қараңғы режим жоғарғы панельдегі батырмамен ауысады. Алғаш кіргенде құрылғының түс таңдауы ескеріледі. Интерфейс телефонға бейімделген; мобильді мәзір жоғарғы сол жақтағы батырмамен ашылады.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Деректер және есептеу
 
-## Deploy on Vercel
+- Барлық дерек **осы браузердің `localStorage` жадында** `qarjy.finance.v1` кілтімен сақталады. Жаңартқанда қалпына келеді, бір origin-дегі ашық қойындылар арасында синхрондалады.
+- Банкпен немесе серверлік дерекқормен байланыс жоқ. Басқа браузерде, басқа портта немесе басқа құрылғыда дерек автоматты пайда болмайды. Жасырын режимде не браузер жадын тазартқанда деректер жоғалуы мүмкін.
+- Алғашқы іске қосуда есеп бос болады: үлгі транзакциялар шынайы дерек ретінде қосылмайды.
+- Ақша бүтін **тиынмен** сақталады. Формаларда теңге енгізіледі: `1250`, `1250.50`, `1250,50`. Теріс сома және үтірден кейін екіден көп таңба қабылданбайды. Бір сома ең көбі 1 000 000 000 ₸ болады.
+- Баланс = барлық кіріс − барлық шығыс. Болашақ күнге транзакция жазылмайды.
+- Жинақ мақсаттары — бөлек есеп. Толықтыру балансқа әсер етпейді, банк шотына ақша аудармайды. Мақсат сомасынан артық толықтыруға болмайды.
+- Калькулятор нәтижесі өрістер өзгергенде қайта есептеледі; «Есептеу және сақтау» жоспарын сақтайды. 50/30/20 — міндетті норма емес, жоспарлау үлгісі.
+- Сабақ дұрыс тест жауабы таңдалған соң аяқталады. Қосымша оқу көзі: [Fingramota.kz](https://fingramota.kz/index.php/kk).
+- Сақталған деректердің құрылымы тексеріледі. Қате JSON немесе `localStorage` бұғатталуы сайтты құлатпайды: ескерту көрсетіледі. Оқылмаған бастапқы жазба жаңа өзгеріс сақталғанша ауыстырылмайды.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Тексеру
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```powershell
+npm run lint
+npx tsc --noEmit
+node --test tests/finance.test.mjs
+npm run build
+```
+
+Автоматты тесттер ақша дәлдігін, балансты, мақсат прогресін және сақталған деректердің валидациясын тексереді.
+
+Қолмен тексеру: транзакция қосып/жойып, Dashboard көрсеткіштерін салыстырыңыз; бетті жаңартып деректі тексеріңіз; мақсат құрып, толықтырып, прогресті бақылаңыз; калькуляторда кірістен артық шығыс енгізіңіз; сабақ тестін аяқтаңыз; режимді ауыстырып, телефон өлшемінде мәзірді тексеріңіз.
+
+## Құрылым
+
+```text
+app/                       App Router беттері, түбір layout және стильдер
+components/app-shell.tsx   Ортақ навигация және түс режимі
+components/finance-provider.tsx  Браузер жады және ортақ күй
+components/ui.tsx          Көрсеткіштер, модаль терезелер, транзакциялар тізімі
+components/icons.tsx       Жергілікті SVG белгішелер
+lib/finance.ts             Типтер, ақша есептері, валидация, сабақтар
+tests/finance.test.mjs      Негізгі дерек логикасының тесттері
+```
+
+Жоба жергілікті жұмысқа арналған. Автоматты жариялау, Git commit немесе push орындалмайды.
