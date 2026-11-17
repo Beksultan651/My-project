@@ -1,46 +1,98 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { emptyData, localToday, readData, STORAGE_KEY, type FinanceData } from "@/lib/finance";
+import { localToday, STORAGE_KEY } from "@/lib/finance";
+import { applyFinanceAction, type FinanceAction, type FinanceIssue } from "@/lib/finance-records";
+import { blankFinance, commitFinance, loadFinance, newFinance, type FinanceChange, type StorageIssue } from "@/lib/finance-storage";
+import type { FinanceData } from "@/types/finance";
 import { Icon } from "./icons";
 
-type Snapshot = FinanceData & { initialized: boolean; today: string; storageError: string };
-const initial: Snapshot = { ...emptyData, initialized: false, today: "", storageError: "" };
+type Snapshot = FinanceData & {
+  initialized: boolean;
+  today: string;
+  storageError: "" | StorageIssue;
+};
+const initial: Snapshot = { ...blankFinance(), initialized: false, today: "", storageError: "" };
 let snapshot = initial;
+let fallback = blankFinance();
+let migrationTime = "";
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((listener) => listener());
-const subscribe = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
+const subscribe = (listener: () => void) => {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+};
 const getSnapshot = () => snapshot;
 const getServerSnapshot = () => initial;
 
-function hydrate() {
-  if (snapshot.initialized) return;
-  let data = emptyData;
-  let storageError = "";
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const saved = readData(raw);
-      if (saved) data = saved;
-      else storageError = "Сақталған деректерді оқу мүмкін болмады. Бастапқы жазба өзгертілмеді. Жаңа дерек қоссаңыз, ол ауыстырылады.";
-    } else if (window.matchMedia("(prefers-color-scheme: dark)").matches) data = { ...emptyData, theme: "dark" };
-  } catch { storageError = "Браузер деректерді сақтауға рұқсат бермеді. Өзгерістер тек осы ашық бетте сақталады."; }
+function publish(data: FinanceData, storageError: Snapshot["storageError"] = "") {
   snapshot = { ...data, initialized: true, today: localToday(), storageError };
   emit();
 }
 
-function update(recipe: (data: FinanceData) => FinanceData) {
-  if (!snapshot.initialized) return;
-  const data = recipe(snapshot);
-  const persisted: FinanceData = { version: 1, transactions: data.transactions, goals: data.goals, completedLessons: data.completedLessons, theme: data.theme, budget: data.budget };
-  let storageError = "";
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted)); }
-  catch { storageError = "Өзгеріс браузерге сақталмады. Жады толған немесе сақтау бұғатталған болуы мүмкін. Бетті жапқанша деректер қолжетімді."; }
-  snapshot = { ...persisted, initialized: true, today: localToday(), storageError };
-  emit();
+function syncFromStorage() {
+  try {
+    const result = loadFinance(window.localStorage, fallback, migrationTime);
+    if ("error" in result) publish(snapshot, result.error);
+    else publish(result.data);
+  } catch {
+    publish(snapshot, "storageBlocked");
+  }
 }
 
-const FinanceContext = createContext<{ data: Snapshot; update: typeof update; notify: (message: string) => void } | null>(null);
+function hydrate() {
+  if (snapshot.initialized) return;
+  migrationTime = new Date().toISOString();
+  const theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  fallback = newFinance(migrationTime, theme);
+  syncFromStorage();
+}
+
+type SaveIssue = FinanceIssue | StorageIssue;
+async function commit(change: (data: FinanceData) => FinanceChange): Promise<SaveIssue | null> {
+  if (!snapshot.initialized) return "formInvalid";
+
+  function write(): SaveIssue | null {
+    let storage: Storage;
+    try {
+      storage = window.localStorage;
+    } catch {
+      publish(snapshot, "storageBlocked");
+      return "storageBlocked";
+    }
+
+    const result = commitFinance(storage, fallback, migrationTime, change);
+    if (!("error" in result)) {
+      publish(result.data);
+      return null;
+    }
+    const storageError = result.error === "storageInvalid" ||
+      result.error === "storageBlocked" || result.error === "storageSave" ? result.error : "";
+    publish(result.current ?? snapshot, storageError);
+    return result.error;
+  }
+
+  try {
+    // Re-read under the same lock used by the other tabs when Web Locks are available.
+    return navigator.locks ? await navigator.locks.request(STORAGE_KEY, write) : write();
+  } catch {
+    publish(snapshot, "storageSave");
+    return "storageSave";
+  }
+}
+
+async function update(recipe: (data: FinanceData) => FinanceData) {
+  return (await commit((data) => ({ data: recipe(data) }))) === null;
+}
+
+const save = (action: FinanceAction) => commit((data) => applyFinanceAction(data, action));
+
+const FinanceContext = createContext<{
+  data: Snapshot;
+  update: typeof update;
+  save: typeof save;
+  notify: (message: string) => void;
+} | null>(null);
 
 export function FinanceProvider({ children }: { children: React.ReactNode }) {
   const data = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
@@ -51,20 +103,37 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     setToast(message);
     timer.current = setTimeout(() => setToast(""), 4000);
   }, []);
+
   useEffect(() => {
     hydrate();
     function sync(event: StorageEvent) {
-      if (event.key !== STORAGE_KEY && event.key !== null) return;
-      const saved = event.newValue ? readData(event.newValue) : emptyData;
-      if (saved) { snapshot = { ...saved, initialized: true, today: localToday(), storageError: "" }; emit(); }
+      if (event.key === STORAGE_KEY || event.key === null) syncFromStorage();
+    }
+    function refresh() {
+      if (!document.hidden && snapshot.today !== localToday()) {
+        snapshot = { ...snapshot, today: localToday() };
+        emit();
+      }
     }
     window.addEventListener("storage", sync);
-    const refresh = () => { if (!document.hidden && snapshot.today !== localToday()) { snapshot = { ...snapshot, today: localToday() }; emit(); } };
     document.addEventListener("visibilitychange", refresh);
-    return () => { window.removeEventListener("storage", sync); document.removeEventListener("visibilitychange", refresh); if (timer.current) clearTimeout(timer.current); };
+    return () => {
+      window.removeEventListener("storage", sync);
+      document.removeEventListener("visibilitychange", refresh);
+      if (timer.current) clearTimeout(timer.current);
+    };
   }, []);
-  useEffect(() => { if (data.initialized) document.documentElement.dataset.theme = data.theme; }, [data.theme, data.initialized]);
-  return <FinanceContext.Provider value={{ data, update, notify }}>{children}{toast && <div role="status" className="toast"><Icon name="check" size={18}/>{toast}</div>}</FinanceContext.Provider>;
+
+  useEffect(() => {
+    if (data.initialized) document.documentElement.dataset.theme = data.theme;
+  }, [data.theme, data.initialized]);
+
+  return (
+    <FinanceContext.Provider value={{ data, update, save, notify }}>
+      {children}
+      {toast && <div role="status" className="toast"><Icon name="check" size={18}/>{toast}</div>}
+    </FinanceContext.Provider>
+  );
 }
 
 export function useFinance() {

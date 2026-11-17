@@ -2,47 +2,48 @@
 
 import { useState, type FormEvent } from "react";
 import { useFinance } from "@/components/finance-provider";
+import { useI18n } from "@/components/i18n-provider";
 import { Icon } from "@/components/icons";
 import { PageHeading } from "@/components/ui";
-import { money, parseMoney, type Budget } from "@/lib/finance";
+import { parseMoney } from "@/lib/finance";
+import { currencyLedger } from "@/lib/finance-records";
+import type { Budget } from "@/types/finance";
+import type { MessageKey } from "@/lib/i18n";
 
-const fields: { key: keyof Budget; label: string; icon: string; placeholder: string }[] = [
-  { key: "income", label: "Айлық кіріс", icon: "down", placeholder: "Мысалы, 300000" },
-  { key: "housing", label: "Тұрғын үй және коммуналдық төлемдер", icon: "home", placeholder: "0" },
-  { key: "food", label: "Азық-түлік", icon: "bag", placeholder: "0" },
-  { key: "transport", label: "Көлік", icon: "exchange", placeholder: "0" },
-  { key: "other", label: "Басқа шығындар", icon: "wallet", placeholder: "0" },
-];
+const fields: { key: keyof Budget; label: MessageKey; icon: string }[] = [{ key: "income", label: "monthlyIncome", icon: "down" }, { key: "housing", label: "housing", icon: "home" }, { key: "food", label: "food", icon: "bag" }, { key: "transport", label: "transport", icon: "exchange" }, { key: "other", label: "otherExpenses", icon: "wallet" }];
 
 function CalculatorForm() {
   const { data, update, notify } = useFinance();
+  const { t, money } = useI18n();
   const [draft, setDraft] = useState<Budget>(data.budget);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<MessageKey | null>(null);
   const values = Object.fromEntries(fields.map(({ key }) => [key, draft[key] === "" ? 0 : parseMoney(draft[key]) ?? 0])) as Record<keyof Budget, number>;
   const expense = values.housing + values.food + values.transport + values.other;
   const balance = values.income - expense;
   const ratio = values.income ? Math.max(0, Math.round(balance / values.income * 100)) : 0;
-  const needs = Math.round(values.income * .5);
-  const wants = Math.round(values.income * .3);
-  const savings = values.income - needs - wants;
-  function calculate(event: FormEvent<HTMLFormElement>) {
+  const needs = Math.round(values.income * .5), wants = Math.round(values.income * .3), savings = values.income - needs - wants;
+  async function calculate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (fields.some(({ key }) => draft[key] !== "" && parseMoney(draft[key]) === null)) return setError("Сомаларды дұрыс енгізіңіз: теріс сансыз, үтірден кейін 2 таңбаға дейін.");
-    if (values.income <= 0) return setError("Нөлден үлкен айлық кірісті енгізіңіз.");
-    setError(""); update((s) => ({ ...s, budget: draft })); notify("Бюджет есептелді және сақталды");
+    if (fields.some(({ key }) => draft[key] !== "" && parseMoney(draft[key]) === null)) return setError("budgetMoneyError");
+    if (values.income <= 0) return setError("budgetIncomeError");
+    setError(null);
+    if (await update((state) => ({ ...state, budget: draft }))) notify(t("budgetSaved"));
   }
   function fromTransactions() {
-    const current = data.transactions.filter((t) => t.date.startsWith(data.today.slice(0, 7)));
-    const sum = (type: "income" | "expense", category?: string) => current.filter((t) => t.type === type && (!category || t.category === category)).reduce((s, t) => s + t.amount, 0);
-    const housing = sum("expense", "Тұрғын үй"), food = sum("expense", "Азық-түлік"), transport = sum("expense", "Көлік");
-    const toText = (n: number) => (n / 100).toFixed(2);
-    setDraft({ income: toText(sum("income")), housing: toText(housing), food: toText(food), transport: toText(transport), other: toText(sum("expense") - housing - food - transport) });
-    setError(""); notify("Осы айдың транзакциялары алынды");
+    const current = currencyLedger(data, "KZT").transactions.filter((item) => item.date.startsWith(data.today.slice(0, 7)));
+    const sum = (type: "income" | "expense", category?: string) => current.filter((item) => item.type === type && (!category || item.categoryId === category)).reduce((total, item) => total + item.amount, 0);
+    const housing = sum("expense", "housing"), food = sum("expense", "food"), transport = sum("expense", "transport");
+    const text = (value: number) => (value / 100).toFixed(2);
+    setDraft({ income: text(sum("income")), housing: text(housing), food: text(food), transport: text(transport), other: text(sum("expense") - housing - food - transport) });
+    setError(null); notify(t("importedTransactions"));
   }
-  return <><div className="calculator-grid"><section className="panel"><div className="section-heading"><h2>Айлық жоспарыңыз</h2><span className="neutral-pill">KZT · ₸</span></div><form onSubmit={calculate} className="form-stack calculator-form">{fields.map(({ key, label, icon, placeholder }, i) => <label key={key} className={i === 1 ? "expense-field-start" : ""}><span className="flex items-center gap-2"><Icon name={icon} size={17}/>{label}</span><div className="currency-input"><input inputMode="decimal" placeholder={placeholder} maxLength={15} value={draft[key]} onChange={(e) => setDraft((s) => ({ ...s, [key]: e.target.value }))} aria-label={label}/><span>₸</span></div></label>)}{error && <p className="form-error" role="alert">{error}</p>}<button className="button button-primary w-full" type="submit"><Icon name="calculator" size={18}/>Есептеу және сақтау</button><button className="text-link self-center" type="button" onClick={fromTransactions}><Icon name="exchange" size={16}/>Осы айдың транзакцияларынан алу</button></form></section><div className="space-y-6"><section className={`budget-result ${balance < 0 ? "budget-negative" : ""}`}><span className="result-icon"><Icon name="wallet" size={25}/></span><p className="result-label">Еркін қаражатыңыз</p><strong className="result-value">{money(balance)}</strong><p className="result-caption">{values.income === 0 ? "Кірісіңізді енгізіп, жоспарыңызды көріңіз." : balance < 0 ? "Шығыстар кірістен көп. Жоспарды қайта қарап көріңіз." : "Мақсаттарыңыз бен жинаққа бөлуге болатын сома."}</p><div className="result-divider"/><div className="result-details"><div><span>Жалпы кіріс</span><strong>{money(values.income)}</strong></div><div><span>Жалпы шығыс</span><strong>{money(expense)}</strong></div><div><span>Бос қаражат үлесі</span><strong>{ratio}%</strong></div></div></section><section className="calculator-tip"><Icon name="spark" size={23}/><div><h3>Алдымен жоспар, содан кейін қадам</h3><p>Сандарды өзгертіп, әр шығынның бюджетіңізге қалай әсер ететінін көріңіз. «Есептеу және сақтау» батырмасы жоспарыңызды сақтайды.</p></div></section></div></div><section className="panel rule-panel"><div className="section-heading"><div><p className="eyebrow">ЖОСПАРЛАУҒА АРНАЛҒАН ҮЛГІ</p><h2>50 / 30 / 20 қағидасы</h2><p className="text-muted text-sm mt-2">Бұл — мысал. Өз жағдайыңызға қарай үлестерді өзгертуге болады.</p></div><Icon name="chart" size={27}/></div><div className="rule-grid">{[{ percent: "50%", title: "Қажеттіліктер", note: "Тұрғын үй, азық-түлік, көлік", value: needs, color: "mint" }, { percent: "30%", title: "Қалаулар", note: "Демалыс, хобби, сыйлықтар", value: wants, color: "peach" }, { percent: "20%", title: "Жинақ және міндеттемелер", note: "Мақсаттар, қор, қарыз төлемдері", value: savings, color: "lilac" }].map((item) => <div className={`rule-card ${item.color}`} key={item.percent}><span>{item.percent}</span><h3>{item.title}</h3><p>{item.note}</p><strong>{money(item.value)}</strong></div>)}</div></section></>;
+  const ruleCards = [{ percent: "50%", title: "ruleNeeds", note: "ruleNeedsNote", value: needs, color: "mint" }, { percent: "30%", title: "ruleWants", note: "ruleWantsNote", value: wants, color: "peach" }, { percent: "20%", title: "ruleSavings", note: "ruleSavingsNote", value: savings, color: "lilac" }] as const;
+  return <><div className="calculator-grid"><section className="panel"><div className="section-heading"><h2>{t("monthlyPlan")}</h2><span className="neutral-pill">KZT · ₸</span></div><form onSubmit={calculate} className="form-stack calculator-form">{fields.map(({ key, label, icon }, index) => <label key={key} className={index === 1 ? "expense-field-start" : ""}><span className="flex items-center gap-2"><Icon name={icon} size={17}/>{t(label)}</span><div className="currency-input"><input inputMode="decimal" placeholder={t("amountPlaceholder")} maxLength={15} value={draft[key]} onChange={(event) => setDraft((state) => ({ ...state, [key]: event.target.value }))} aria-label={t(label)}/><span>₸</span></div></label>)}{error && <p className="form-error" role="alert">{t(error)}</p>}<button className="button button-primary w-full" type="submit"><Icon name="calculator" size={18}/>{t("calculateSave")}</button><button className="text-link self-center" type="button" onClick={fromTransactions}><Icon name="exchange" size={16}/>{t("useThisMonth")}</button><p className="text-muted text-xs">{t("calculatorCurrency")}</p></form></section>
+      <section className={`budget-result ${balance < 0 ? "budget-negative" : ""}`}><span className="result-icon"><Icon name="wallet" size={25}/></span><p className="result-label">{t("freeMoney")}</p><strong className="result-value">{money(balance)}</strong><p className="result-caption">{t(values.income === 0 ? "emptyBudget" : balance < 0 ? "insufficientBudget" : "availableForSavings")}</p><div className="result-divider"/><div className="result-details"><div><span>{t("totalIncome")}</span><strong>{money(values.income)}</strong></div><div><span>{t("totalExpense")}</span><strong>{money(expense)}</strong></div><div><span>{t("availableShare")}</span><strong>{ratio}%</strong></div></div></section></div>
+    <section className="panel rule-panel"><div className="section-heading"><div><h2>{t("ruleTitle")}</h2><p className="text-muted text-sm mt-2">{t("ruleNote")}</p></div><Icon name="chart" size={27}/></div><div className="rule-grid">{ruleCards.map((item) => <div className={`rule-card ${item.color}`} key={item.percent}><span>{item.percent}</span><h3>{t(item.title)}</h3><p>{t(item.note)}</p><strong>{money(item.value)}</strong></div>)}</div></section>
+  </>;
 }
-
 export default function CalculatorPage() {
-  const { data } = useFinance();
-  return <div className="space-y-7"><PageHeading eyebrow="САНАЛЫ ЖОСПАР" title="Бюджет калькуляторы" description="Кіріс пен шығысты салыстырып, мүмкіндігіңізді алдын ала бағалаңыз."/>{data.initialized ? <CalculatorForm/> : <div className="panel loading-panel" role="status">Сақталған жоспар жүктелуде…</div>}</div>;
+  const { data } = useFinance(); const { t } = useI18n();
+  return <div className="space-y-7"><PageHeading title={t("calculator")} description={t("calculatorSubtitle")}/>{data.initialized ? <CalculatorForm/> : <div className="panel loading-panel" role="status">{t("loading")}</div>}</div>;
 }

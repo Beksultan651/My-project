@@ -1,3 +1,5 @@
+import type { Budget, Transaction } from "../types/finance";
+
 export const STORAGE_KEY = "qarjy.finance.v1";
 export const MAX_MONEY = 100_000_000_000;
 
@@ -6,7 +8,7 @@ export const categories = {
   expense: ["Азық-түлік", "Тұрғын үй", "Көлік", "Денсаулық", "Білім", "Демалыс", "Басқа шығыс"],
 } as const;
 
-export type Transaction = {
+type LegacyTransaction = {
   id: string;
   type: "income" | "expense";
   title: string;
@@ -14,18 +16,17 @@ export type Transaction = {
   category: string;
   date: string;
 };
-export type Goal = { id: string; title: string; target: number; saved: number; deadline: string };
-export type Budget = { income: string; housing: string; food: string; transport: string; other: string };
-export type FinanceData = {
+type LegacyGoal = { id: string; title: string; target: number; saved: number; deadline: string };
+type LegacyFinanceData = {
   version: 1;
-  transactions: Transaction[];
-  goals: Goal[];
+  transactions: LegacyTransaction[];
+  goals: LegacyGoal[];
   completedLessons: string[];
   theme: "light" | "dark";
   budget: Budget;
 };
 
-export const emptyData: FinanceData = {
+export const emptyData: LegacyFinanceData = {
   version: 1, transactions: [], goals: [], completedLessons: [], theme: "light",
   budget: { income: "", housing: "", food: "", transport: "", other: "" },
 };
@@ -56,26 +57,34 @@ export function localToday() {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
+export const MONTH_NAMES = ["қаңтар", "ақпан", "наурыз", "сәуір", "мамыр", "маусым", "шілде", "тамыз", "қыркүйек", "қазан", "қараша", "желтоқсан"] as const;
+export const MONTH_LABELS = ["Қаң", "Ақп", "Нау", "Сәу", "Мам", "Мау", "Шіл", "Там", "Қыр", "Қаз", "Қар", "Жел"] as const;
+
 export function displayDate(value: string, full = false) {
   if (!validDate(value)) return "—";
-  return new Intl.DateTimeFormat("kk-KZ", { day: "numeric", month: full ? "long" : "short", ...(full ? { year: "numeric" } : {}) }).format(new Date(`${value}T12:00:00`));
+  const [year, month, day] = value.split("-").map(Number);
+  return full ? `${day} ${MONTH_NAMES[month - 1]} ${year}` : `${day} ${MONTH_LABELS[month - 1].toLowerCase()}.`;
 }
 
-export function totals(transactions: Transaction[]) {
-  const income = transactions.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0);
-  const expense = transactions.filter((t) => t.type === "expense").reduce((sum, t) => sum + t.amount, 0);
-  return { income, expense, balance: income - expense };
+export function totals(transactions: readonly Pick<Transaction, "type" | "amount">[], initialBalance = 0) {
+  let income = 0;
+  let expense = 0;
+  for (const transaction of transactions) {
+    if (transaction.type === "income") income += transaction.amount;
+    else expense += transaction.amount;
+  }
+  return { income, expense, balance: initialBalance + income - expense };
 }
 
-export function goalProgress(goal: Goal) {
-  return Math.min(100, Math.floor((goal.saved / goal.target) * 100));
+export function goalProgress(goal: { savedAmount: number; targetAmount: number }) {
+  return Math.min(100, Math.floor(goal.savedAmount * 100 / goal.targetAmount));
 }
 
 const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 const text = (value: unknown, max = 80): value is string => typeof value === "string" && value.trim().length > 0 && value.length <= max;
 const amount = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= MAX_MONEY;
 
-export function readData(raw: string): FinanceData | null {
+export function readData(raw: string): LegacyFinanceData | null {
   try {
     const value: unknown = JSON.parse(raw);
     if (!record(value) || value.version !== 1 || !["light", "dark"].includes(String(value.theme))) return null;
@@ -86,7 +95,7 @@ export function readData(raw: string): FinanceData | null {
     if (!value.completedLessons.every((id: unknown) => typeof id === "string" && /^lesson-[1-6]$/.test(id)) || new Set(value.completedLessons).size !== value.completedLessons.length) return null;
     if (!record(value.budget) || !Object.keys(emptyData.budget).every((key) => record(value.budget) && typeof value.budget[key] === "string" && (value.budget[key] === "" || parseMoney(value.budget[key]) !== null))) return null;
     if (new Set(value.transactions.map((t) => t.id)).size !== value.transactions.length || new Set(value.goals.map((g) => g.id)).size !== value.goals.length) return null;
-    return value as FinanceData;
+    return value as LegacyFinanceData;
   } catch { return null; }
 }
 
