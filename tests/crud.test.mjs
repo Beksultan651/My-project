@@ -3,6 +3,14 @@ import test from "node:test";
 import { emptyData, goalProgress, STORAGE_KEY, totals } from "../lib/finance.ts";
 import { applyFinanceAction, currencyLedger } from "../lib/finance-records.ts";
 import { commitFinance, decodeFinance, defaultAccountId, isFinanceData, newFinance } from "../lib/finance-storage.ts";
+import { deleteServerFinance, readServerFinance, writeServerFinance } from "../lib/server-finance.ts";
+import { mkdtemp, rm } from "node:fs/promises";
+import path from "node:path";
+import { tmpdir } from "node:os";
+import {
+  authorizeFinanceRequest, checkFinanceRateLimit, checkOrigin, createSessionCookie,
+  hasValidSession, verifyLoginPassword,
+} from "../lib/finance-api-security.ts";
 
 const now = "2026-11-16T12:00:00.000Z";
 const fallback = newFinance(now);
@@ -135,4 +143,96 @@ test("жарамсыз, кейінгі нұсқалы немесе сақтау�
   const storage = storageWith();
   assert.equal(save(storage, { collection: "accounts", next: { ...checking, initialBalance: -1 } }).error, "formInvalid");
   assert.equal(storage.getItem(STORAGE_KEY), null);
+});
+
+test("серверлік JSON дерекқоры валидті деректі атомарлы сақтап, қайта оқиды", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "qarjy-"));
+  const file = path.join(directory, "finance.json");
+  try {
+    assert.equal(await readServerFinance(file), null);
+    assert.equal(await writeServerFinance(fallback, file), true);
+    assert.deepEqual(await readServerFinance(file), fallback);
+  } finally {
+    await rm(directory, { recursive: true });
+  }
+});
+
+test("API source origin тексеріліп, same-origin сұранысқа рұқсат беріледі", () => {
+  const sameOrigin = new Request("http://localhost:3011/api/finance", {
+    headers: { origin: "http://localhost:3011" },
+  });
+  assert.equal(checkOrigin(sameOrigin), true);
+
+  const crossOrigin = new Request("http://localhost:3011/api/finance", {
+    headers: { origin: "https://attacker.example" },
+  });
+  assert.equal(checkOrigin(crossOrigin), false);
+  assert.equal(authorizeFinanceRequest(crossOrigin, true).allowed, false);
+
+  const mismatchedScheme = new Request("https://finance.example/api/finance", {
+    headers: { host: "finance.example", origin: "http://finance.example" },
+  });
+  assert.equal(checkOrigin(mismatchedScheme), false);
+
+  const noSession = new Request("http://localhost:3011/api/finance", {
+    headers: { origin: "http://localhost:3011" },
+  });
+  assert.deepEqual(authorizeFinanceRequest(noSession, false), {
+    allowed: false, status: 401, error: "unauthenticated",
+  });
+});
+
+test("API rate limit артық сұранысты шектейді", () => {
+  const address = `198.51.100.${Math.floor(Math.random() * 200) + 1}`;
+  for (let i = 0; i < 60; i++) {
+    const request = new Request("http://localhost:3011/api/finance", {
+      headers: { "x-forwarded-for": address },
+    });
+    assert.equal(checkFinanceRateLimit(request, "read"), true);
+  }
+  const limited = new Request("http://localhost:3011/api/finance", {
+    headers: { "x-forwarded-for": address },
+  });
+  assert.equal(checkFinanceRateLimit(limited, "read"), false);
+});
+
+test("ортақ құпиясөз HttpOnly қолтаңбалы 24 сағаттық сессия жасайды", () => {
+  const previous = process.env.FINANCE_API_KEY;
+  const password = `test-only-${crypto.randomUUID()}-${crypto.randomUUID()}`;
+  process.env.FINANCE_API_KEY = password;
+  try {
+    assert.equal(verifyLoginPassword(password), true);
+    assert.equal(verifyLoginPassword(`${password}x`), false);
+    const request = new Request("https://finance.example/api/auth/login", {
+      headers: { origin: "https://finance.example" },
+    });
+    const cookie = createSessionCookie(request, 1_800_000_000_000);
+    assert.match(cookie, /^qarjy_session=\d+\.[a-f0-9]{64}; Path=\/; HttpOnly; SameSite=Strict; Max-Age=86400; Secure$/);
+    const token = cookie.split(";")[0];
+    assert.equal(hasValidSession(new Request("https://finance.example/api/finance", {
+      headers: { cookie: token },
+    }), 1_800_000_000_000), true);
+    assert.equal(hasValidSession(new Request("https://finance.example/api/finance", {
+      headers: { cookie: token },
+    }), 1_800_086_400_000), false);
+  } finally {
+    if (previous === undefined) delete process.env.FINANCE_API_KEY;
+    else process.env.FINANCE_API_KEY = previous;
+  }
+});
+
+test("DELETE пен WRITE операциялары бір кезекте орындалады", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "qarjy-race-"));
+  const file = path.join(directory, "finance.json");
+  try {
+    await writeServerFinance(fallback, file);
+    await Promise.all([
+      deleteServerFinance(file),
+      writeServerFinance({ ...fallback, theme: "dark" }, file),
+    ]);
+    const data = await readServerFinance(file);
+    assert.ok(data === null || data.theme === "dark");
+  } finally {
+    await rm(directory, { recursive: true });
+  }
 });
