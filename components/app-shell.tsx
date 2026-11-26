@@ -17,6 +17,7 @@ const navigation: { href: string; key: MessageKey; shortKey: MessageKey; icon: s
   { href: "/categories", key: "categories", shortKey: "categories", icon: "bag" },
   { href: "/calculator", key: "calculator", shortKey: "calculator", icon: "calculator" },
   { href: "/goals", key: "goals", shortKey: "goalsShort", icon: "target" },
+  { href: "/profile", key: "myProfile", shortKey: "myProfile", icon: "shield" },
   { href: "/learn", key: "learn", shortKey: "learnShort", icon: "book" },
 ];
 const mobileRoutes = new Set(["/", "/dashboard", "/transactions", "/goals", "/learn"]);
@@ -61,7 +62,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="workspace">
       <header className="topbar">
         <div className="flex items-center gap-3"><button ref={menuButton} className="icon-button menu-toggle" aria-label={t("menuOpen")} aria-expanded={menuOpen} aria-controls="main-navigation" onClick={() => setMenuOpen(true)}><Icon name="menu"/></button><span className="breadcrumb">{t("workspace")} <span>/</span> <strong>{t(currentKey)}</strong></span></div>
-        <div className="topbar-actions"><label className="language-control"><span className="sr-only">{t("language")}</span><select className="language-select" aria-label={t("language")} value={locale} disabled={!ready} onChange={(event) => { if (isLocale(event.target.value)) setLocale(event.target.value); }}>{locales.map((value) => <option key={value} value={value} lang={value}>{localeNames[value]}</option>)}</select></label><button className="icon-button theme-toggle" disabled={!data.initialized} onClick={() => update((state) => ({ ...state, theme: state.theme === "light" ? "dark" : "light" }))} aria-label={t(data.theme === "light" ? "darkMode" : "lightMode")}><Icon name={data.theme === "light" ? "moon" : "sun"}/></button><span className="profile-avatar" aria-label={t("workspace")}>Q</span></div>
+        <div className="topbar-actions"><label className="language-control"><span className="sr-only">{t("language")}</span><select className="language-select" aria-label={t("language")} value={locale} disabled={!ready} onChange={(event) => { if (isLocale(event.target.value)) setLocale(event.target.value); }}>{locales.map((value) => <option key={value} value={value} lang={value}>{localeNames[value]}</option>)}</select></label><button className="icon-button theme-toggle" disabled={!data.initialized} onClick={() => update((state) => ({ ...state, theme: state.theme === "light" ? "dark" : "light" }))} aria-label={t(data.theme === "light" ? "darkMode" : "lightMode")}><Icon name={data.theme === "light" ? "moon" : "sun"}/></button><Link href="/profile" className="profile-avatar" aria-label={t("myProfile")}>{data.user?.username.charAt(0).toUpperCase() || "Q"}</Link></div>
       </header>
       <main id="main-content" className="main-content" tabIndex={-1}>{data.storageError && <div className="storage-warning" role="alert"><Icon name="shield" size={20}/>{t(data.storageError)}</div>}<FinanceImport/>{children}</main>
       <footer className="app-footer"><span>© 2026 qarjy.</span><span><span className="status-dot"/>{t("accountStorage")}</span></footer>

@@ -7,7 +7,7 @@ import { useFinance } from "@/components/finance-provider";
 import { useI18n } from "@/components/i18n-provider";
 import { Icon } from "@/components/icons";
 import { EmptyState, Modal, PageHeading } from "@/components/ui";
-import { referenceCounts } from "@/lib/finance-records";
+import type { Transaction } from "@/types/finance";
 import { createRecordId } from "@/lib/record-id";
 import type { MessageKey } from "@/lib/i18n";
 import type { Category } from "@/types/finance";
@@ -65,11 +65,16 @@ function CategoryForm({ category, onClose }: { category: Category | null; onClos
 
 export default function CategoriesPage() {
   const { data } = useFinance();
-  const { t } = useI18n();
-  const { categoryLabel } = useFinanceLabels();
+  const { t, money } = useI18n();
+  const { categoryLabel, accountCurrency } = useFinanceLabels();
   const [editor, setEditor] = useState<{ category: Category | null } | null>(null);
   const [deleting, setDeleting] = useState<Category | null>(null);
-  const counts = referenceCounts(data.transactions, (transaction) => transaction.categoryId);
+  const history = new Map<string, Transaction[]>();
+  for (const entry of [...data.transactions].sort((a, b) => b.date.localeCompare(a.date))) {
+    const entries = history.get(entry.categoryId);
+    if (entries) entries.push(entry);
+    else history.set(entry.categoryId, [entry]);
+  }
 
   return (
     <div className="space-y-7">
@@ -88,6 +93,7 @@ export default function CategoriesPage() {
                 {!categories.length && <EmptyState icon="exchange" title={t("noCategories")} description={t("noCategoriesBody")}/>}
                 {categories.map((category) => {
                   const name = categoryLabel(category);
+                  const entries = history.get(category.id) ?? [];
                   return (
                     <div className="transaction-row" key={category.id}>
                       <span className={`transaction-icon ${type === "income" ? "mint" : "peach"}`}>
@@ -95,7 +101,18 @@ export default function CategoriesPage() {
                       </span>
                       <div className="transaction-info">
                         <strong>{name}</strong>
-                        <span>{t("operationCount", { count: counts.get(category.id) ?? 0 })}</span>
+                        {entries.length ? (
+                          <details>
+                            <summary className="text-link cursor-pointer">{t("operationCount", { count: entries.length })} ▾</summary>
+                            <ul className="space-y-2 py-2">
+                              {entries.map(entry => (
+                                <li key={entry.id} className="text-sm">
+                                  <time dateTime={entry.date}>{entry.date}</time> · {entry.description} · {money(entry.amount, accountCurrency(entry.accountId))}
+                                </li>
+                              ))}
+                            </ul>
+                          </details>
+                        ) : <span>{t("operationCount", { count: 0 })}</span>}
                       </div>
                       <div className="transaction-row-actions">
                         <button className="icon-button" aria-label={t("namedAction", { action: t("editCategory"), name })}

@@ -1,4 +1,4 @@
-import { categories as legacyCategories, emptyData, MAX_MONEY, parseMoney, readData, STORAGE_KEY, validDate } from "./finance.ts";
+import { lessons as courseLessons, categories as legacyCategories, emptyData, MAX_MONEY, parseMoney, readData, STORAGE_KEY, validDate } from "./finance.ts";
 import type { FinanceIssue } from "./finance-records";
 import type { Account, AccountType, Category, Currency, FinanceData, SavingsGoal, Transaction, TransactionType } from "../types/finance";
 
@@ -95,8 +95,8 @@ export function isFinanceData(value: unknown): value is FinanceData {
   if (!value.transactions.every((entry) => accountIds.has(entry.accountId) && categoryTypes.get(entry.categoryId) === entry.type)) return false;
 
   const lessons = value.completedLessons;
-  if (!Array.isArray(lessons) || lessons.length > 6 || new Set(lessons).size !== lessons.length ||
-      !lessons.every((entry) => typeof entry === "string" && /^lesson-[1-6]$/.test(entry))) return false;
+  if (!Array.isArray(lessons) || lessons.length > courseLessons.length || new Set(lessons).size !== lessons.length ||
+      !lessons.every((entry) => typeof entry === "string" && courseLessons.some(lesson => lesson.id === entry))) return false;
 
   const budget = value.budget;
   return isRecord(budget) && Object.keys(emptyData.budget).every((key) => {

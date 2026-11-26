@@ -49,11 +49,11 @@ test("аударылған санатпен іздеу жазбадағы бас
   assert.equal(translatedCategory("Арнайы санат", "en"), "Арнайы санат");
 });
 
-test("алты сабақтың мазмұны мен тесті аударылады, жауап индекстері сақталады", () => {
+test("он сабақтың мазмұны мен тесті аударылады, жауап индекстері сақталады", () => {
   const original = structuredClone(lessons);
   for (const locale of locales) {
     const translated = localizeLessons(lessons, locale);
-    assert.equal(translated.length, 6);
+    assert.equal(translated.length, 10);
     for (let index = 0; index < translated.length; index += 1) {
       const lesson = translated[index];
       assert.equal(lesson.id, lessons[index].id);
