@@ -1,83 +1,53 @@
-import type { FinanceData } from "@/types/finance";
-import { deleteServerFinance, readServerFinance, writeServerFinance } from "@/lib/server-finance";
-import { authorizeFinanceRequest } from "@/lib/finance-api-security";
+import { stat } from "node:fs/promises";
+import { getFinanceAccountDb } from "@/lib/finance-postgres";
+import { allowAttempt, getToken, json, readJson, sameOrigin, verifyLegacyKey } from "@/lib/finance-http";
+import { isFinanceData } from "@/lib/finance-storage";
+import { readServerFinance, serverFinancePath } from "@/lib/server-finance";
+
 
 export async function GET(request: Request) {
-  const authorization = authorizeFinanceRequest(request, false);
-  if (!authorization.allowed) return securityResponse(authorization.status, authorization.error);
-  const data = await readServerFinance();
-  return data
-    ? Response.json({ data })
-    : Response.json({ data: null }, { status: 404 });
+  if (request.headers.has("origin") && !sameOrigin(request)) return json({ error: "forbiddenOrigin" }, 403);
+  try {
+    const store = getFinanceAccountDb();
+    const user = await store.session(getToken(request));
+    if (!user) return json({ error: "unauthenticated" }, 401);
+    const record = await store.read(user.id);
+    if (record.version !== 0 && !isFinanceData(record.data)) return json({ error: "serverUnavailable" }, 500);
+    const legacyAvailable = record.version === 0 && (process.env.FINANCE_API_KEY?.length ?? 0) >= 32 &&
+      await stat(/*turbopackIgnore: true*/ serverFinancePath).then(file => file.isFile(), () => false);
+    return json({ user, ...record, legacyAvailable });
+  } catch {
+    return json({ error: "serverUnavailable" }, 500);
+  }
 }
 
 export async function PUT(request: Request) {
-  const authorization = authorizeFinanceRequest(request, true);
-  if (!authorization.allowed) return securityResponse(authorization.status, authorization.error);
-  let body: unknown;
+  if (!sameOrigin(request)) return json({ error: "forbiddenOrigin" }, 403);
   try {
-    body = await request.json();
+    const store = getFinanceAccountDb();
+    const user = await store.session(getToken(request));
+    if (!user) return json({ error: "unauthenticated" }, 401);
+    const body = await readJson(request, 6 * 1024 * 1024);
+    const version = body?.version;
+    if (!body || typeof version !== "number" || !Number.isSafeInteger(version) || version < 0) {
+      return json({ error: "formInvalid" }, 400);
+    }
+    if (body.userId !== user.id) return json({ error: "recordChanged" }, 409);
+
+    if (body.source === "legacy") {
+      if (!allowAttempt(`legacy:${user.id}`, 5)) return json({ error: "authRate" }, 429);
+      if (version !== 0 || !verifyLegacyKey(body.password)) return json({ error: "authInvalid" }, 403);
+      const data = await readServerFinance();
+      if (!data) return json({ error: "storageInvalid" }, 400);
+      if ((await store.session(getToken(request)))?.id !== user.id) return json({ error: "unauthenticated" }, 401);
+      if (!await store.importLegacy(user.id, data)) return json({ error: "authAlreadyImported" }, 409);
+      return json({ version: 1, data });
+    }
+
+    if (!isFinanceData(body.data)) return json({ error: "formInvalid" }, 400);
+    if (!await store.save(user.id, version, body.data)) return json({ error: "recordChanged" }, 409);
+    return json({ version: version + 1 });
   } catch {
-    return Response.json({ error: "invalidJson" }, { status: 400 });
+    return json({ error: "storageSave" }, 500);
   }
-
-  if (typeof body !== "object" || body === null || !("data" in body)) {
-    return Response.json({ error: "invalidData" }, { status: 400 });
-  }
-
-  const data = (body as { data?: unknown }).data;
-  try {
-    const saved = await writeServerFinance(data as FinanceData);
-    return saved
-      ? Response.json({ data })
-      : Response.json({ error: "invalidData" }, { status: 400 });
-  } catch {
-    return Response.json({ error: "serverSave" }, { status: 500 });
-  }
-}
-
-export async function POST(request: Request) {
-  const authorization = authorizeFinanceRequest(request, true);
-  if (!authorization.allowed) return securityResponse(authorization.status, authorization.error);
-  return saveRequest(request);
-}
-
-export async function DELETE(request: Request) {
-  const authorization = authorizeFinanceRequest(request, true);
-  if (!authorization.allowed) return securityResponse(authorization.status, authorization.error);
-  try {
-    const deleted = await deleteServerFinance();
-    return deleted
-      ? Response.json({ deleted: true })
-      : Response.json({ error: "serverDelete" }, { status: 500 });
-  } catch {
-    return Response.json({ error: "serverDelete" }, { status: 500 });
-  }
-}
-
-async function saveRequest(request: Request) {
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return Response.json({ error: "invalidJson" }, { status: 400 });
-  }
-
-  if (typeof body !== "object" || body === null || !("data" in body)) {
-    return Response.json({ error: "invalidData" }, { status: 400 });
-  }
-
-  const data = (body as { data?: unknown }).data;
-  try {
-    const saved = await writeServerFinance(data as FinanceData);
-    return saved
-      ? Response.json({ data }, { status: 201 })
-      : Response.json({ error: "invalidData" }, { status: 400 });
-  } catch {
-    return Response.json({ error: "serverSave" }, { status: 500 });
-  }
-}
-
-function securityResponse(status: 401 | 403 | 429, error: string) {
-  return Response.json({ error }, { status });
 }

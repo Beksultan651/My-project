@@ -1,0 +1,126 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+  importFileExtension = "ts"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id       String @id
+  username String @unique
+  salt     String
+  hash     String
+  ledger   Ledger?
+  sessions Session[]
+  legacy   LegacyClaim?
+  @@map("users")
+}
+
+model Session {
+  tokenHash String @id
+  userId    String
+  expires   BigInt
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+  @@index([expires])
+  @@map("sessions")
+}
+
+model Ledger {
+  userId           String @id
+  revision         Int
+  theme            String
+  completedLessons String[]
+  user             User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accounts         Account[]
+  categories       Category[]
+  transactions     Transaction[]
+  goals            Goal[]
+  budget           Budget?
+  @@map("ledgers")
+}
+
+model Account {
+  userId         String
+  id             String
+  position       Int
+  name           String
+  type           String
+  initialBalance BigInt
+  currency       String
+  createdAt      String
+  ledger         Ledger @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  transactions   Transaction[]
+  @@id([userId, id])
+  @@map("accounts")
+}
+
+model Category {
+  userId       String
+  id           String
+  position     Int
+  name         String
+  type         String
+  ledger       Ledger @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  transactions Transaction[]
+  @@id([userId, id])
+  @@map("categories")
+}
+
+model Transaction {
+  userId      String
+  id          String
+  position    Int
+  accountId   String
+  categoryId  String
+  type        String
+  amount      BigInt
+  description String
+  date        String
+  createdAt   String
+  updatedAt   String
+  ledger      Ledger @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  account     Account @relation(fields: [userId, accountId], references: [userId, id], onDelete: NoAction)
+  category    Category @relation(fields: [userId, categoryId], references: [userId, id], onDelete: NoAction)
+  @@id([userId, id])
+  @@index([userId, accountId])
+  @@index([userId, categoryId])
+  @@map("transactions")
+}
+
+model Goal {
+  userId       String
+  id           String
+  position     Int
+  name         String
+  targetAmount BigInt
+  savedAmount  BigInt
+  deadline     String
+  createdAt    String
+  updatedAt    String
+  ledger       Ledger @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  @@id([userId, id])
+  @@map("goals")
+}
+
+model Budget {
+  userId    String @id
+  income    BigInt?
+  housing   BigInt?
+  food      BigInt?
+  transport BigInt?
+  other     BigInt?
+  input     Json
+  ledger    Ledger @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  @@map("budgets")
+}
+
+model LegacyClaim {
+  singleton Int @id
+  userId    String @unique
+  user      User @relation(fields: [userId], references: [id])
+  @@map("legacy_claim")
+}

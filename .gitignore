@@ -42,3 +42,8 @@ next-env.d.ts
 
 # local backend database
 /data/finance.json
+/data/*.sqlite
+/data/*.sqlite-*
+!/.env.example
+/lib/generated/prisma/
+.neon

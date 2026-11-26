@@ -6,6 +6,9 @@ import "./globals.css";
 import "./language.css";
 import "./ledger.css";
 
+// Private pages render after the browser restores the user's session.
+export const instant = false;
+
 export const metadata: Metadata = {
   applicationName: "qarjy.",
   icons: { icon: "/icon.svg" },

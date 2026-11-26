@@ -1,11 +1,12 @@
-import { authorizeSessionAction, clearSessionCookie } from "@/lib/finance-api-security";
+import { getFinanceAccountDb } from "@/lib/finance-postgres";
+import { getToken, json, sameOrigin, sessionCookie } from "@/lib/finance-http";
 
 export async function POST(request: Request) {
-  const authorization = authorizeSessionAction(request);
-  if (!authorization.allowed) {
-    return Response.json({ error: authorization.error }, { status: authorization.status });
+  if (!sameOrigin(request)) return json({ error: "forbiddenOrigin" }, 403);
+  try {
+    await getFinanceAccountDb().logout(getToken(request));
+    return json({ authenticated: false }, 200, sessionCookie(request));
+  } catch {
+    return json({ error: "authError" }, 500);
   }
-  return Response.json({ authenticated: false }, {
-    headers: { "Set-Cookie": clearSessionCookie(request), "Cache-Control": "no-store" },
-  });
 }

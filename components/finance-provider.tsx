@@ -2,180 +2,173 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { localToday, STORAGE_KEY } from "@/lib/finance";
-import { applyFinanceAction, type FinanceAction, type FinanceIssue } from "@/lib/finance-records";
-import { blankFinance, commitFinance, loadFinance, newFinance, type FinanceChange, type StorageIssue } from "@/lib/finance-storage";
-import type { FinanceData } from "@/types/finance";
-import { Icon } from "./icons";
-import { FinanceLogin } from "./finance-login";
+import { applyFinanceAction, type FinanceAction } from "@/lib/finance-records";
+import { blankFinance, decodeFinance, isFinanceData, newFinance, type FinanceChange } from "@/lib/finance-storage";
 import type { MessageKey } from "@/lib/i18n";
+import type { FinanceData } from "@/types/finance";
+import { FinanceLogin } from "./finance-login";
+import { Icon } from "./icons";
 
+type Viewer = { id: string; username: string };
 type Snapshot = FinanceData & {
   initialized: boolean;
   today: string;
-  storageError: "" | StorageIssue | "serverUnavailable";
-  authRequired: boolean;
+  storageError: "" | MessageKey;
+  user: Viewer | null;
+  revision: number;
+  legacyAvailable: boolean;
 };
-const initial: Snapshot = { ...blankFinance(), initialized: false, today: "", storageError: "", authRequired: false };
+const initial: Snapshot = {
+  ...blankFinance(), initialized: false, today: "", storageError: "", user: null, revision: 0, legacyAvailable: false,
+};
 let snapshot = initial;
-let fallback = blankFinance();
-let migrationTime = "";
+let pending: Promise<unknown> = Promise.resolve();
 const listeners = new Set<() => void>();
-const emit = () => listeners.forEach((listener) => listener());
 const subscribe = (listener: () => void) => {
   listeners.add(listener);
   return () => { listeners.delete(listener); };
 };
-const getSnapshot = () => snapshot;
-const getServerSnapshot = () => initial;
 
-function publish(data: FinanceData, storageError: Snapshot["storageError"] = "") {
-  snapshot = { ...data, initialized: true, today: localToday(), storageError, authRequired: false };
-  emit();
+function publish(next: Snapshot) {
+  snapshot = next;
+  listeners.forEach(listener => listener());
 }
 
-function requireAuthentication() {
-  snapshot = { ...blankFinance(), initialized: false, today: "", storageError: "", authRequired: true };
-  emit();
+function enqueue<T>(action: () => Promise<T>): Promise<T> {
+  const result = pending.then(action, action);
+  pending = result;
+  return result;
 }
 
-function syncFromStorage() {
-  if (snapshot.authRequired) return;
-  try {
-    const result = loadFinance(window.localStorage, fallback, migrationTime);
-    if ("error" in result) publish(snapshot, result.error);
-    else publish(result.data);
-  } catch {
-    publish(snapshot, "storageBlocked");
-  }
-}
-
-function hydrate() {
-  if (snapshot.initialized) return;
-  migrationTime = new Date().toISOString();
-  const theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-  fallback = newFinance(migrationTime, theme);
-  syncWithServer();
-}
-
-async function syncWithServer() {
+async function refresh() {
   try {
     const response = await fetch("/api/finance", { cache: "no-store" });
     if (response.status === 401) {
-      requireAuthentication();
-      return;
+      publish({ ...initial, initialized: true });
+      return false;
     }
-    if (response.status === 404) {
-      syncFromStorage();
-      if (snapshot.initialized) {
-        await saveToServer(snapshot);
-      }
-      return;
-    }
-    if (!response.ok) throw new Error("Server unavailable");
-    const result = await response.json() as { data?: FinanceData };
-    if (!result.data) throw new Error("Invalid server response");
-
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(result.data));
-    publish(result.data);
-  } catch {
-    syncFromStorage();
-    if (snapshot.initialized) publish(snapshot, "serverUnavailable");
-  }
-}
-
-async function saveToServer(data: FinanceData) {
-  try {
-    const response = await fetch("/api/finance", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ data }),
-    });
-    if (response.status === 401) {
-      requireAuthentication();
-      return;
-    }
-    if (!response.ok) throw new Error("Server save failed");
-    publish(data);
-  } catch {
-    publish(data, "serverUnavailable");
-  }
-}
-
-async function login(password: string): Promise<MessageKey | null> {
-  try {
-    const response = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
-    });
-    if (response.status === 401) return "authInvalid";
-    if (response.status === 503) return "authUnavailable";
-    if (!response.ok) return "authError";
-    await syncWithServer();
-    return snapshot.authRequired ? "authError" : null;
-  } catch {
-    return "authError";
-  }
-}
-
-async function logout(): Promise<boolean> {
-  try {
-    const response = await fetch("/api/auth/logout", { method: "POST" });
-    if (!response.ok) return false;
-    requireAuthentication();
+    if (!response.ok) throw new Error();
+    const saved = await response.json() as { user: Viewer; data: unknown; version: number; legacyAvailable: boolean };
+    const sameUser = snapshot.user?.id === saved.user.id;
+    const initialFinance = sameUser && snapshot.revision === 0 ? financeOnly(snapshot)
+      : newFinance(new Date().toISOString(), matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    if (!(saved.version === 0 && saved.data === null) && !isFinanceData(saved.data)) throw new Error();
+    const data = isFinanceData(saved.data) ? saved.data : initialFinance;
+    publish({ ...data, user: saved.user, revision: saved.version, initialized: true, today: localToday(),
+      storageError: "", legacyAvailable: saved.legacyAvailable });
     return true;
   } catch {
+    publish({ ...snapshot, initialized: true, storageError: "serverUnavailable" });
     return false;
   }
 }
 
-type SaveIssue = FinanceIssue | StorageIssue;
-async function commit(change: (data: FinanceData) => FinanceChange): Promise<SaveIssue | null> {
-  if (!snapshot.initialized) return "formInvalid";
+function financeOnly(data: FinanceData): FinanceData {
+  const { accounts, categories, transactions, goals, completedLessons, theme, budget } = data;
+  return { version: 2, accounts, categories, transactions, goals, completedLessons, theme, budget };
+}
 
-  function write(): SaveIssue | null {
-    let storage: Storage;
+const responseErrors: MessageKey[] = ["forbiddenOrigin", "authInvalid", "authTaken", "authRate", "authFields", "authAlreadyImported", "storageInvalid", "formInvalid", "recordChanged"];
+async function readError(response: Response, fallback: MessageKey): Promise<MessageKey> {
+  const body = await response.json().catch(() => null);
+  return responseErrors.find(error => error === body?.error) ?? fallback;
+}
+
+function authenticate(mode: "login" | "register", username: string, password: string) {
+  return enqueue(async (): Promise<MessageKey | null> => {
     try {
-      storage = window.localStorage;
+      const response = await fetch(`/api/auth/${mode}`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password }),
+      });
+      if (!response.ok) return readError(response, "authError");
+      return await refresh() ? null : "authError";
     } catch {
-      publish(snapshot, "storageBlocked");
-      return "storageBlocked";
+      return "authError";
     }
+  });
+}
 
-    const result = commitFinance(storage, fallback, migrationTime, change);
-    if (!("error" in result)) {
-      publish(result.data);
-      void saveToServer(result.data);
-      return null;
+function logout() {
+  return enqueue(async () => {
+    try {
+      const response = await fetch("/api/auth/logout", { method: "POST" });
+      if (!response.ok) return false;
+      publish({ ...initial, initialized: true });
+      return true;
+    } catch {
+      return false;
     }
-    const storageError = result.error === "storageInvalid" ||
-      result.error === "storageBlocked" || result.error === "storageSave" ? result.error : "";
-    publish(result.current ?? snapshot, storageError);
-    return result.error;
-  }
+  });
+}
 
+async function persist(current: Snapshot, input: { data: FinanceData } | { source: "legacy"; password: string }): Promise<MessageKey | null> {
+  if (!current.user) return "authError";
   try {
-    // Re-read under the same lock used by the other tabs when Web Locks are available.
-    return navigator.locks ? await navigator.locks.request(STORAGE_KEY, write) : write();
+    const response = await fetch("/api/finance", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...input, version: current.revision, userId: current.user.id }),
+    });
+    if (response.status === 401 || response.status === 409) {
+      const error = await readError(response, "recordChanged");
+      await refresh();
+      return error;
+    }
+    if (!response.ok) {
+      const error = await readError(response, "storageSave");
+      if (error === "storageSave") publish({ ...current, storageError: error });
+      return error;
+    }
+    const result = await response.json();
+    const data = "data" in input ? input.data : result.data;
+    if (!isFinanceData(data) || result.version !== current.revision + 1) throw new Error();
+    publish({ ...current, ...financeOnly(data), revision: result.version, legacyAvailable: false, today: localToday(), storageError: "" });
+    return null;
   } catch {
-    publish(snapshot, "storageSave");
+    publish({ ...current, storageError: "storageSave" });
     return "storageSave";
   }
 }
 
-async function update(recipe: (data: FinanceData) => FinanceData) {
-  return (await commit((data) => ({ data: recipe(data) }))) === null;
+function commit(change: (data: FinanceData) => FinanceChange) {
+  const userId = snapshot.user?.id;
+  return enqueue(async (): Promise<MessageKey | null> => {
+    const current = snapshot;
+    if (!userId || current.user?.id !== userId) return "authError";
+    const result = change(financeOnly(current));
+    if ("error" in result) return result.error;
+    return persist(current, { data: financeOnly(result.data) });
+  });
 }
 
-const save = (action: FinanceAction) => commit((data) => applyFinanceAction(data, action));
+const update = async (recipe: (data: FinanceData) => FinanceData) => (await commit(data => ({ data: recipe(data) }))) === null;
+const save = (action: FinanceAction) => commit(data => applyFinanceAction(data, action));
+
+function importLocal(source: "browser" | "legacy", password = "") {
+  const userId = snapshot.user?.id;
+  return enqueue(async (): Promise<MessageKey | null> => {
+    const current = snapshot;
+    if (!userId || current.user?.id !== userId || current.revision !== 0) return "authAlreadyImported";
+    if (source === "legacy") return persist(current, { source, password });
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      const data = raw === null ? null : decodeFinance(raw, new Date().toISOString());
+      return data ? persist(current, { data }) : "storageInvalid";
+    } catch {
+      return "storageBlocked";
+    }
+  });
+}
 
 const FinanceContext = createContext<{
   data: Snapshot;
   update: typeof update;
   save: typeof save;
   logout: typeof logout;
+  importLocal: typeof importLocal;
   notify: (message: string) => void;
 } | null>(null);
+const getSnapshot = () => snapshot;
+const getServerSnapshot = () => initial;
 
 export function FinanceProvider({ children }: { children: React.ReactNode }) {
   const data = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
@@ -188,33 +181,26 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    hydrate();
-    function sync(event: StorageEvent) {
-      if (event.key === STORAGE_KEY || event.key === null) syncFromStorage();
+    void enqueue(refresh);
+    function syncVisible() {
+      if (document.visibilityState === "visible") void enqueue(refresh);
     }
-    function refresh() {
-      if (!document.hidden && snapshot.today !== localToday()) {
-        snapshot = { ...snapshot, today: localToday() };
-        emit();
-      }
-    }
-    window.addEventListener("storage", sync);
-    document.addEventListener("visibilitychange", refresh);
+    document.addEventListener("visibilitychange", syncVisible);
     return () => {
-      window.removeEventListener("storage", sync);
-      document.removeEventListener("visibilitychange", refresh);
+      document.removeEventListener("visibilitychange", syncVisible);
       if (timer.current) clearTimeout(timer.current);
     };
   }, []);
 
   useEffect(() => {
-    if (data.initialized) document.documentElement.dataset.theme = data.theme;
-  }, [data.theme, data.initialized]);
+    document.documentElement.dataset.theme = data.user ? data.theme : "light";
+  }, [data.user, data.theme]);
 
   return (
-    <FinanceContext.Provider value={{ data, update, save, logout, notify }}>
-      {data.authRequired ? <FinanceLogin onLogin={login}/> : children}
-      {toast && <div role="status" className="toast"><Icon name="check" size={18}/>{toast}</div>}
+    <FinanceContext.Provider value={{ data, update, save, logout, importLocal, notify }}>
+      {data.user ? <div key={data.user.id}>{children}</div> :
+        <FinanceLogin onAuthenticate={authenticate} loading={!data.initialized} unavailable={!!data.storageError} />}
+      {data.user && toast && <div role="status" className="toast"><Icon name="check" size={18}/>{toast}</div>}
     </FinanceContext.Provider>
   );
 }
