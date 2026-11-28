@@ -17,7 +17,7 @@ export function StatCards({ income, expense, balance, currency }: { income: numb
 export function EmptyState({ icon, title, description, children }: { icon: string; title: string; description: string; children?: React.ReactNode }) {
   return <div className="empty-state"><span className="empty-icon"><Icon name={icon} size={28}/></span><h3>{title}</h3><p>{description}</p>{children}</div>;
 }
-export function Modal({ open, onClose, title, description, children }: { open: boolean; onClose: () => void; title: string; description?: string; children: React.ReactNode }) {
+export function Modal({ open, onClose, title, description, children, wide = false }: { open: boolean; onClose: () => void; title: string; description?: string; children: React.ReactNode; wide?: boolean }) {
   const { t } = useI18n();
   const ref = useRef<HTMLDialogElement>(null);
   const id = useId();
@@ -30,7 +30,7 @@ export function Modal({ open, onClose, title, description, children }: { open: b
     }
     if (!open && dialog?.open) dialog.close();
   }, [open]);
-  return <dialog ref={ref} className="modal" aria-labelledby={id} onCancel={(event) => { event.preventDefault(); onClose(); }} onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}><div className="modal-content"><div className="modal-heading"><div><h2 id={id}>{title}</h2>{description && <p>{description}</p>}</div><button className="icon-button" onClick={onClose} aria-label={t("close")}><Icon name="close"/></button></div>{children}</div></dialog>;
+  return <dialog ref={ref} className={wide ? "modal modal-wide" : "modal"} aria-labelledby={id} onCancel={(event) => { event.preventDefault(); onClose(); }} onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}><div className="modal-content"><div className="modal-heading"><div><h2 id={id}>{title}</h2>{description && <p>{description}</p>}</div><button className="icon-button" onClick={onClose} aria-label={t("close")}><Icon name="close"/></button></div>{children}</div></dialog>;
 }
 export function TransactionList({ transactions, onDelete, onEdit }: { transactions: Transaction[]; onDelete?: (item: Transaction) => void; onEdit?: (item: Transaction) => void }) {
   const { t, money, date } = useI18n();

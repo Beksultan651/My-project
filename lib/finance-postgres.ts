@@ -69,7 +69,7 @@ export class FinancePostgres {
     const digest = await derive(password, salt);
     const id = randomUUID();
     const { count } = await this.db.user.createMany({
-      data: { id, username, salt, hash: digest.toString("hex") }, skipDuplicates: true,
+      data: { id, username, salt, hash: digest.toString("hex"), createdAt: new Date() }, skipDuplicates: true,
     });
     return count ? { id, username } : null;
   }
@@ -85,17 +85,20 @@ export class FinancePostgres {
   async createSession(userId: string) {
     const token = randomBytes(32).toString("base64url");
     const now = Date.now();
-    await this.db.$transaction([
-      this.db.session.deleteMany({ where: { expires: { lte: BigInt(now) } } }),
-      this.db.session.create({ data: { tokenHash: tokenHash(token), userId, expires: BigInt(now + SESSION_SECONDS * 1000) } }),
-    ]);
+    const created = await this.db.$transaction(async tx => {
+      const active = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM users WHERE id = ${userId} AND status = 'ACTIVE' FOR UPDATE`;
+      if (!active.length) return false;
+      await tx.session.create({ data: { tokenHash: tokenHash(token), userId, expires: BigInt(now + SESSION_SECONDS * 1000) } });
+      return true;
+    });
+    if (!created) throw new Error("Inactive account");
     return token;
   }
 
   async session(token?: string): Promise<FinanceUser | null> {
     if (!token || !/^[\w-]{43}$/.test(token)) return null;
     const row = await this.db.session.findUnique({
-      where: { tokenHash: tokenHash(token), expires: { gt: BigInt(Date.now()) } },
+      where: { tokenHash: tokenHash(token), expires: { gt: BigInt(Date.now()) }, user: { status: "ACTIVE" } },
       select: { user: { select: { id: true, username: true } } },
     });
     return row?.user ?? null;

@@ -17,7 +17,9 @@ const navigation: { href: string; key: MessageKey; shortKey: MessageKey; icon: s
   { href: "/categories", key: "categories", shortKey: "categories", icon: "bag" },
   { href: "/calculator", key: "calculator", shortKey: "calculator", icon: "calculator" },
   { href: "/goals", key: "goals", shortKey: "goalsShort", icon: "target" },
+  { href: "/supervision", key: "learningOffice", shortKey: "learningOffice", icon: "chart" },
   { href: "/profile", key: "myProfile", shortKey: "myProfile", icon: "shield" },
+  { href: "/simulations", key: "simulations", shortKey: "simulations", icon: "calculator" },
   { href: "/learn", key: "learn", shortKey: "learnShort", icon: "book" },
 ];
 const mobileRoutes = new Set(["/", "/dashboard", "/transactions", "/goals", "/learn"]);
@@ -57,7 +59,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="sidebar-brand"><Link href="/" onClick={() => setMenuOpen(false)} className="brand"><span className="brand-icon"><Icon name="leaf" size={24}/></span><span>qarjy<span className="brand-dot">.</span><small>{t("appName")}</small></span></Link><button className="icon-button mobile-close" aria-label={t("menuClose")} onClick={() => setMenuOpen(false)}><Icon name="close"/></button></div>
       <p className="nav-label">{t("myFinance")}</p>
       <nav>{navigation.map((item) => <Link key={item.href} href={item.href} onClick={() => setMenuOpen(false)} className={`nav-item ${pathname === item.href ? "active" : ""}`} aria-current={pathname === item.href ? "page" : undefined}><Icon name={item.icon} size={20}/><span>{t(item.key)}</span>{pathname === item.href && <span className="nav-active-dot"/>}</Link>)}</nav>
-      <div className="sidebar-bottom"><div className="local-note"><Icon name="shield" size={17}/><span>{t("accountStorage")}</span></div><button className="text-link" type="button" onClick={async () => { if (!await logout()) notify(t("authLogoutError")); }}>{t("authLogout")} · {data.user?.username}</button></div>
+      <div className="sidebar-bottom"><button className="button button-outline" type="button" onClick={async () => { if (!await logout()) notify(t("authLogoutError")); }}>{t("authLogout")}</button></div>
     </aside>
     <div className="workspace">
       <header className="topbar">

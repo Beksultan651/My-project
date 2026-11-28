@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "./i18n-provider";
 
@@ -20,8 +21,8 @@ export function Complaints() {
   }, []);
   useEffect(() => {
     const controller = new AbortController();
-    void refresh(controller.signal);
-    return () => controller.abort();
+    const initialLoad = setTimeout(() => void refresh(controller.signal), 0);
+    return () => { clearTimeout(initialLoad); controller.abort(); };
   }, [refresh]);
   async function submit(id?: string) {
     setPending(true);
@@ -33,6 +34,7 @@ export function Complaints() {
     } catch { setError(true); } finally { setPending(false); }
   }
   return <section className="panel space-y-4">
+    {box?.isAdmin && <Link className="button button-outline" href="/admin/accounts">{t("adminAccounts")}</Link>}
     <h2>{t(box?.isAdmin ? "complaintsAdmin" : "complaintsMine")}</h2>
     <form className="form-stack" onSubmit={e => { e.preventDefault(); void submit(); }}>
       <label>{t("complaintMessage")}<textarea required maxLength={2000} rows={3} value={message} onChange={e => setMessage(e.target.value)}/></label>

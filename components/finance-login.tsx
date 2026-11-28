@@ -6,7 +6,7 @@ import { Icon } from "./icons";
 import { isLocale, locales, localeNames, type MessageKey } from "@/lib/i18n";
 
 export function FinanceLogin({ onAuthenticate, loading, unavailable }: {
-  onAuthenticate: (mode: "login" | "register", username: string, password: string) => Promise<MessageKey | null>;
+  onAuthenticate: (mode: "login" | "register", username: string, password: string, registration?: { fullName: string; email: string; invitation: string }) => Promise<MessageKey | null>;
   loading: boolean;
   unavailable: boolean;
 }) {
@@ -26,7 +26,9 @@ export function FinanceLogin({ onAuthenticate, loading, unavailable }: {
       return;
     }
     setPending(true);
-    setError(await onAuthenticate(mode, username, password));
+    setError(await onAuthenticate(mode, username, password, registering ? {
+      fullName: String(form.get('fullName')), email: String(form.get('email')), invitation: String(form.get('invitation')),
+    } : undefined));
     setPending(false);
   }
 
@@ -45,7 +47,7 @@ export function FinanceLogin({ onAuthenticate, loading, unavailable }: {
           </label>
         </div>
         <p className="text-muted">{t("authDescription")}</p>
-        {loading ? <p role="status">{t("loading")}</p> : <>
+        <>
           <form key={mode} className="form-stack mt-6" onSubmit={submit}>
             <label>{t("authUsername")}
               <input name="username" required minLength={3} maxLength={40} autoComplete="username"
@@ -59,16 +61,22 @@ export function FinanceLogin({ onAuthenticate, loading, unavailable }: {
             {registering && <label>{t("authConfirm")}
               <input name="confirm" type="password" required minLength={12} maxLength={128} autoComplete="new-password"/>
             </label>}
-            {(error || unavailable) && <p className="form-error" role="alert">{t(error || "serverUnavailable")}</p>}
-            <button className="button button-primary w-full" type="submit" disabled={pending}>
-              <Icon name="lock" size={17}/>{pending ? t("loading") : t(registering ? "authRegister" : "authLogin")}
+            {registering && <>
+              <label>Аты-жөні<input name="fullName" autoComplete="name" maxLength={100} required /></label>
+              <label>Email<input name="email" type="email" autoComplete="email" maxLength={254} required /></label>
+              <label>Шақыру коды<input name="invitation" autoComplete="off" minLength={32} maxLength={32} required /></label>
+            </>}
+            {error === "registrationPending" && <p role="status">{t(error)}</p>}
+            {((error && error !== "registrationPending") || unavailable) && <p className="form-error" role="alert">{t(error || "serverUnavailable")}</p>}
+            <button className="button button-primary w-full" type="submit" disabled={loading || pending}>
+              <Icon name="lock" size={17}/>{pending || loading ? t("loading") : t(registering ? "authRegister" : "authLogin")}
             </button>
           </form>
-          <button className="text-link mt-4" type="button" disabled={pending} onClick={() => {
+          <button className="text-link mt-4" type="button" disabled={loading || pending} onClick={() => {
             setMode(registering ? "login" : "register");
             setError(null);
           }}>{t(registering ? "authLogin" : "authRegister")}</button>
-        </>}
+        </>
       </section>
     </main>
   );

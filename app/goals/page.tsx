@@ -8,6 +8,7 @@ import { Icon } from "@/components/icons";
 import { EmptyState, Modal, PageHeading } from "@/components/ui";
 import { goalProgress, parseMoney, validDate } from "@/lib/finance";
 import { createRecordId } from "@/lib/record-id";
+import { savingsPlan } from "@/lib/savings-plan";
 import type { MessageKey, MessageParams } from "@/lib/i18n";
 import type { SavingsGoal } from "@/types/finance";
 
@@ -125,6 +126,26 @@ function ContributionForm({ goal, onClose }: { goal: SavingsGoal; onClose: () =>
   );
 }
 
+function GoalPlan({ goal, today, monthlyBudget }: { goal: SavingsGoal; today: string; monthlyBudget: number | null }) {
+  const { t, money } = useI18n();
+  const remaining = goal.targetAmount - goal.savedAmount;
+  const plan = savingsPlan(remaining, today, goal.deadline);
+
+  return <details className="my-3 text-sm">
+    <summary className="text-link">{t("goalPlan")}</summary>
+    <div className="mt-3 space-y-2">
+      {!goal.deadline ? <p>{t("planNoDate")}</p> : !plan ? <p>{t("planExpired")}</p> : plan.days === 0 ?
+        <p>{t("planToday", { amount: money(remaining) })}</p> : <>
+          <p>{t("planPerWeek", { amount: money(plan.perWeek), count: plan.weeks })}</p>
+          <p>{t("planPerMonth", { amount: money(plan.perMonth), count: plan.months })}</p>
+          <p className="text-muted">{t("planLast")}</p>
+          {monthlyBudget !== null && <p>{t("goalBudgetSurplus", { amount: money(monthlyBudget) })}</p>}
+          {monthlyBudget !== null && monthlyBudget < plan.perMonth && <p className="form-error">{t("planGap", { amount: money(plan.perMonth - monthlyBudget) })}</p>}
+      </>}
+    </div>
+  </details>;
+}
+
 export default function GoalsPage() {
   const { data } = useFinance();
   const { t, money, date } = useI18n();
@@ -134,6 +155,11 @@ export default function GoalsPage() {
   const savedTotal = data.goals.reduce((sum, goal) => sum + goal.savedAmount, 0);
   const targetTotal = data.goals.reduce((sum, goal) => sum + goal.targetAmount, 0);
   const completed = data.goals.filter((goal) => goal.savedAmount === goal.targetAmount).length;
+
+  const { income, housing, food, transport, other } = data.budget;
+  const plannedIncome = income.trim() ? parseMoney(income) : null;
+  const monthlyBudget = plannedIncome === null ? null :
+    plannedIncome - [housing, food, transport, other].reduce((sum, value) => sum + (parseMoney(value) ?? 0), 0);
 
   return (
     <div className="space-y-7">
@@ -151,6 +177,14 @@ export default function GoalsPage() {
             <div><p>{t("goalTotalTarget")}</p><strong>{money(targetTotal)}</strong></div>
             <div><p>{t("goalCompleted")}</p><strong>{completed} <span>/ {data.goals.length}</span></strong></div>
           </section>
+          <div className="panel goal-suggestions">
+            <span>{t("goalExamples")}</span>
+            {(["goalBook", "goalCar", "emergencyFund", "newLaptop", "travel"] as const).map((key) => (
+              <button type="button" key={key} onClick={() => setEditor({ goal: null, suggestion: t(key) })}>
+                {t(key)}<Icon name="plus" size={14}/>
+              </button>
+            ))}
+          </div>
           {data.goals.length ? (
             <div className="goals-grid">
               {data.goals.map((goal, index) => {
@@ -181,6 +215,7 @@ export default function GoalsPage() {
                       <span>{complete ? t("goalReached") : t("remaining", { amount: money(goal.targetAmount - goal.savedAmount) })}</span>
                       <strong>{progress}%</strong>
                     </div>
+                    {!complete && <GoalPlan goal={goal} today={data.today} monthlyBudget={monthlyBudget} />}
                     <button className={`button w-full ${complete ? "button-complete" : "button-outline"}`} disabled={complete}
                       onClick={() => setAdding(goal)}>
                       <Icon name={complete ? "check" : "plus"} size={17}/>{t(complete ? "goalComplete" : "goalAdd")}
@@ -196,14 +231,6 @@ export default function GoalsPage() {
                   <Icon name="plus" size={18}/>{t("createGoal")}
                 </button>
               </EmptyState>
-              <div className="goal-suggestions">
-                <span>{t("goalExamples")}</span>
-                {(["emergencyFund", "newLaptop", "travel"] as const).map((key) => (
-                  <button key={key} onClick={() => setEditor({ goal: null, suggestion: t(key) })}>
-                    {t(key)}<Icon name="plus" size={14}/>
-                  </button>
-                ))}
-              </div>
             </section>
           )}
           <p className="info-note"><Icon name="target" size={19}/><span>{t("goalNote")}</span></p>

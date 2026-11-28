@@ -104,12 +104,20 @@ export async function authenticate(request: Request, register: boolean) {
   try {
     const { getFinanceAccountDb } = await import("./finance-postgres.ts");
     const store = getFinanceAccountDb();
-    const user = await (register ? store.register(username, password) : store.login(username, password));
+    if (register) {
+      const { requestRegistration } = await import("./invitations.ts");
+      const result = await requestRegistration(username, password, input ?? {});
+      return result === "registrationPending" ? json({ status: result }, 202) : json({ error: result }, 400);
+    }
+    const user = await store.login(username, password);
     if (!user) return json({ error: register ? "authTaken" : "authInvalid" }, register ? 409 : 401);
+    const { getPrisma } = await import("./prisma.ts");
+    if (!await getPrisma().user.count({ where: { id: user.id, status: "ACTIVE" } })) return json({ error: "accountInactive" }, 403);
     const token = await store.createSession(user.id);
     await store.logout(getToken(request));
     return json({ user }, register ? 201 : 200, sessionCookie(request, token));
-  } catch {
+  } catch (error) {
+    if (register && error && typeof error === "object" && "code" in error && error.code === "P2002") return json({ error: "authTaken" }, 409);
     return json({ error: "authError" }, 500);
   }
 }

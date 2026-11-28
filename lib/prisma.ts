@@ -3,7 +3,7 @@ import { PrismaClient } from "./generated/prisma/client.ts";
 
 export function createPrisma(url: string) {
   const schema = new URL(url).searchParams.get("schema") ?? "public";
-  return new PrismaClient({ adapter: new PrismaPg({ connectionString: url, connectionTimeoutMillis: 5000 }, { schema }) });
+  return new PrismaClient({ adapter: new PrismaPg({ connectionString: url, connectionTimeoutMillis: 20000, idleTimeoutMillis: 60000 }, { schema }) });
 }
 
 const runtime = globalThis as typeof globalThis & { qarjyPrisma?: PrismaClient };

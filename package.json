@@ -9,7 +9,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test tests/backend.test.mjs tests/crud.test.mjs tests/finance.test.mjs tests/i18n.test.mjs",
+    "test": "node --test tests/backend.test.mjs tests/crud.test.mjs tests/finance.test.mjs tests/i18n.test.mjs tests/simulation.test.mjs",
     "test:db": "node --test tests/postgres.test.mjs",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",

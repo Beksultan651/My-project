@@ -7,7 +7,7 @@ import { useI18n } from "@/components/i18n-provider";
 import { PageHeading } from "@/components/ui";
 
 export default function ProfilePage() {
-  const { data } = useFinance();
+  const { data, logout, notify } = useFinance();
   const { t } = useI18n();
   const sections = [
     { href: "/accounts", label: t("accounts"), count: data.accounts.length },
@@ -33,6 +33,7 @@ export default function ProfilePage() {
               </div>
             ))}
           </dl>
+          <button type="button" className="button button-outline" onClick={async () => { if (!await logout()) notify(t("authLogoutError")); }}>{t("authLogout")}</button>
         </section>
         <Complaints key={data.user.id}/>
         </>

@@ -68,19 +68,20 @@ function financeOnly(data: FinanceData): FinanceData {
   return { version: 2, accounts, categories, transactions, goals, completedLessons, theme, budget };
 }
 
-const responseErrors: MessageKey[] = ["forbiddenOrigin", "authInvalid", "authTaken", "authRate", "authFields", "authAlreadyImported", "storageInvalid", "formInvalid", "recordChanged"];
+const responseErrors: MessageKey[] = ["inviteInvalid", "accountInactive", "forbiddenOrigin", "authInvalid", "authTaken", "authRate", "authFields", "authAlreadyImported", "storageInvalid", "formInvalid", "recordChanged"];
 async function readError(response: Response, fallback: MessageKey): Promise<MessageKey> {
   const body = await response.json().catch(() => null);
   return responseErrors.find(error => error === body?.error) ?? fallback;
 }
 
-function authenticate(mode: "login" | "register", username: string, password: string) {
+function authenticate(mode: "login" | "register", username: string, password: string, registration?: { fullName: string; email: string; invitation: string }) {
   return enqueue(async (): Promise<MessageKey | null> => {
     try {
       const response = await fetch(`/api/auth/${mode}`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password }),
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password, ...registration }),
       });
       if (!response.ok) return readError(response, "authError");
+      if (response.status === 202) return "registrationPending";
       return await refresh() ? null : "authError";
     } catch {
       return "authError";
@@ -94,6 +95,7 @@ function logout() {
       const response = await fetch("/api/auth/logout", { method: "POST" });
       if (!response.ok) return false;
       publish({ ...initial, initialized: true });
+      window.location.replace("/login");
       return true;
     } catch {
       return false;
@@ -181,12 +183,22 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    void enqueue(refresh);
-    function syncVisible() {
-      if (document.visibilityState === "visible") void enqueue(refresh);
+    let refreshing = false;
+    function sync() {
+      if (refreshing) return;
+      refreshing = true;
+      void enqueue(refresh).finally(() => { refreshing = false; });
     }
+    const startup = setTimeout(sync, 0);
+    function syncVisible() {
+      if (document.visibilityState === "visible") sync();
+    }
+    function restore(event: PageTransitionEvent) { if (event.persisted) window.location.reload(); }
+    window.addEventListener("pageshow", restore);
     document.addEventListener("visibilitychange", syncVisible);
     return () => {
+      clearTimeout(startup);
+      window.removeEventListener("pageshow", restore);
       document.removeEventListener("visibilitychange", syncVisible);
       if (timer.current) clearTimeout(timer.current);
     };

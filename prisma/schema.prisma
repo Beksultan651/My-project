@@ -8,7 +8,50 @@ datasource db {
   provider = "postgresql"
 }
 
+enum AccountStatus {
+  ACTIVE
+  PENDING
+  REJECTED
+  BLOCKED
+  ARCHIVED
+}
+
+
+model AdminContent {
+  id String @id
+  kind String
+  title String
+  body String
+  parentId String?
+  parent AdminContent? @relation("ContentTree",fields:[parentId],references:[id])
+  children AdminContent[] @relation("ContentTree")
+  archived Boolean @default(false)
+  updatedAt DateTime @updatedAt
+  @@index([kind,archived])
+}
+
+model Invitation {
+  id String @id
+  digest String @unique
+  creatorId String
+  creator User @relation(fields: [creatorId], references: [id])
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  usedAt DateTime?
+  revokedAt DateTime?
+  @@index([createdAt])
+}
+
 model User {
+  status AccountStatus @default(ACTIVE)
+  fullName String?
+  email String? @unique
+  createdAt DateTime?
+  invitations Invitation[]
+  learningDemo      LearningDemoProfile?
+  authoredTasks     LearningTask[] @relation("LearningTaskAuthor")
+  assignedTasks     LearningTask[] @relation("LearningTaskAssignee")
+  @@index([status, createdAt])
   id       String @id
   username String @unique
   salt     String
@@ -16,6 +59,8 @@ model User {
   ledger   Ledger?
   sessions Session[]
   isAdmin Boolean @default(false)
+  studentLinks Supervision[] @relation("studentLinks")
+  adminLinks Supervision[] @relation("adminLinks")
   complaints Complaint[]
   legacy   LegacyClaim?
   @@map("users")
@@ -136,4 +181,72 @@ model Complaint {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@index([userId, createdAt])
   @@map("complaints")
+}
+
+model Supervision {
+  studentId String
+  adminId String
+  active Boolean @default(true)
+  student User @relation("studentLinks", fields:[studentId], references:[id])
+  admin User @relation("adminLinks", fields:[adminId], references:[id])
+  grants VirtualGrant[]
+  messages CoachMessage[]
+  @@id([studentId, adminId])
+  @@index([adminId, active])
+}
+
+model VirtualGrant {
+  id String @id
+  studentId String
+  adminId String
+  amount BigInt
+  date String
+  note String
+  link Supervision @relation(fields:[studentId,adminId], references:[studentId,adminId])
+  @@index([studentId,date])
+}
+
+model CoachMessage {
+  id String @id @default(uuid())
+  studentId String
+  adminId String
+  fromAdmin Boolean
+  body String
+  advice Boolean
+  createdAt DateTime @default(now())
+  readAt DateTime?
+  link Supervision @relation(fields:[studentId,adminId], references:[studentId,adminId])
+  @@index([studentId,adminId,createdAt])
+}
+
+model AdminEvent {
+  id String @id @default(uuid())
+  actor String
+  student String
+  action String
+  reference String
+  createdAt DateTime @default(now())
+  @@index([actor,createdAt])
+}
+
+model LearningDemoProfile {
+  adminId   String   @id
+  createdAt DateTime @default(now())
+  admin     User     @relation(fields: [adminId], references: [id], onDelete: Cascade)
+}
+
+model LearningTask {
+  id         String   @id @default(uuid())
+  adminId    String
+  // A null assignee means the author's demonstration profile.
+  assigneeId String?
+  body       String
+  completed  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  admin      User     @relation("LearningTaskAuthor", fields: [adminId], references: [id], onDelete: Cascade)
+  assignee   User?    @relation("LearningTaskAssignee", fields: [assigneeId], references: [id], onDelete: Cascade)
+
+  @@index([adminId, createdAt])
+  @@index([assigneeId, createdAt])
 }
